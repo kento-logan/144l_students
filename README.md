@@ -2,4 +2,4 @@
 
 This repository includes data, code, and supplementary information to be used by students for the remotely instructed EEMB144L during the fall quarter 2020 (@) UCSB. 
 
-This is a cloned repository cloned by K.Lo
+ (TEST) UPDATE REPOS. NEW CHANGE K_LOGAN
