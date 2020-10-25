@@ -1,0 +1,75 @@
+---
+title: "Intro2RMarkdown"
+author: "KentoLogan"
+date: "10/25/2020"
+output: github_document
+---
+
+#title
+##title
+###title
+
+simple text
+*italisize* 
+**bold**
+[link here]
+
+
+# Code Chunk
+new chunk (Insert->R)
+```{r}
+library(tidyverse)
+library(tidyverse)
+library(lubridate)
+install.packages("RColorBrewer")
+library(RColorBrewer)
+```
+or a shortcut: (cntrl alt i)
+
+#load data
+```{r}
+socal.fires<- readRDS("~/GitHub_Files/144l_students/Output_Data/socalfires.data.rds")
+```
+#make plot dataframe
+```{r message=TRUE, warning=TRUE}
+plot.data<- socal.fires %>% 
+  rename(county =County_Unit, fire =Fire_Name, start =Start_Date, acres =Total_Acres_Burned, cause = Cause) %>% 
+  mutate(county = ifelse(fire == "THOMAS","VENTURA", county), year = year(start))
+```
+#Summary Stats *group_by()*
+```{r}
+summary.data<- plot.data %>% 
+  group_by(county) %>% 
+  summarize(total_acres =sum(acres), mean_acres = mean(acres)) %>% 
+  arrange(-total_acres) %>% 
+  ungroup()
+```
+```{r}
+county_year_summary.data<-plot.data %>% 
+  group_by(county,year) %>% 
+  summarise(total_acres =sum(acres)) %>% 
+  arrange(desc(year), desc(total_acres)) %>% 
+  ungroup()
+```
+
+#Plot Data
+```{r}
+ggplot(summary.data, aes(x = county, y =total_acres))+ 
+  geom_col()+ 
+  labs(x = "County", y = "Total Acres Burned")+
+  theme_bw()+coord_flip()
+```
+```{r}
+summary_factor <- summary.data %>% 
+  mutate(county = factor(county, levels = county))
+```
+```{r}
+ggplot(summary_factor, aes(x = county, y =total_acres))+ 
+  geom_col(aes(fill = county))+ 
+  labs(x = "County", y = "Total Acres Burned", title = "Total Acres Burned n\ 2014-2018")+
+  scale_fill_brewer(palette = "Spectral" )+
+  theme_bw()+coord_flip()+
+  guides(fill = F)
+```
+```
+
