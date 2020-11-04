@@ -1,0 +1,40 @@
+---
+title: "2018_TOC_Data"
+author: "KentoLogan"
+date: "11/3/2020"
+output: github_document
+---
+
+#Load Libraries
+```{r}
+library(tidyverse)
+library(readxl)
+library(lubridate)
+```
+
+#Load Data
+```{r}
+excel_sheets("~/GitHub_Files/144l_students/Input_Data/week4/144L_2018_Exp_TOC.xlsx")
+metadata<- read_excel("~/GitHub_Files/144l_students/Input_Data/week4/144L_2018_Exp_TOC.xlsx", sheet = "Metadata")
+data<- read_excel("~/GitHub_Files/144l_students/Input_Data/week4/144L_2018_Exp_TOC.xlsx", sheet = "Data")
+```
+
+#Prep Data
+```{r}
+joined<- left_join(metadata, data)
+
+toc<- joined %>% 
+  mutate(Datetime= ymd_hm(Datetime)) %>% 
+  group_by(Bottle) %>% 
+  mutate(interv= interval(first(Datetime), Datetime),
+         hours= interv/3600,
+         days= hours/24) %>% 
+  ungroup() %>% 
+  select(Bottle:Datetime, hours, days, everything())
+
+subset<- toc %>% 
+  select(Bottle, Datetime, interv)
+
+
+```
+
