@@ -101,4 +101,9 @@ incidents<-plot.data %>%
   write.csv(socal.fires, "Output_Data/socal.fies.data.csv")
 
   ggsave(filename="Fire_Incidents", all_incidents.plot, device ="jpeg", "Output_Data/")  
+#go to git tab, check dif, commit, push
+  
+  
+  #####WEEK TWO: MARKDOWN#####
+#go to new r-markdown where you'd find new script etc
   
