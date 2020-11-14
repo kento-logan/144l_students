@@ -1,0 +1,153 @@
+---
+title: "DADA_2_2018_Data"
+author: "KentoLogan"
+date: "11/12/2020"
+output: github_document
+---
+#Install and Load DADA2 and ShortRead
+```{r}
+if (!requireNamespace("BiocManager", quietly = TRUE))
+    install.packages("BiocManager")
+BiocManager::install(version = '3.11')
+BiocManager::install("dada2", version = "3.11")
+BiocManager::install("ShortRead")
+```
+```{r}
+library(tidyverse)
+library(dada2)
+library(ShortRead)
+```
+
+#Imort File Names
+```{r}
+path<- "~/GitHub_Files/144l_students/Input_Data/week5/EEMB144L_2018_fastq"
+
+fnFs<- list.files(path, pattern = "_R1_001.fastq", full.names = TRUE)
+fnRs<- list.files(path, pattern = "_R2_001.fastq", full.names = TRUE)
+```
+
+#Retrieve Orientation of Primers (Tratget V4: 514F-Y and 806RB)
+```{r}
+FWD = "GTGYCAGCMGCCGCGGTAA"
+REV = "GGACTACNVGGGTWTCTAAT"
+
+allOrients<- function(primer){
+  require(Biostrings)
+  dna<- DNAString(primer)
+  orients<- c(Forward= dna, Complement= complement(dna), Reverse= reverse(dna),
+              RevComp= reverseComplement(dna))
+  return(sapply(orients, toString))
+}
+
+FWD.orients<- allOrients(FWD)
+REV.orients<- allOrients(REV)
+
+```
+
+#Primer Search
+```{r}
+primerHits<- function(primer, fn){
+  nhits<- vcountPattern(primer, sread(readFastq(fn)), fixed= FALSE)
+  return(sum(nhits>0))
+}
+
+rbind(FWD.ForwardReads= sapply(FWD.orients, primerHits, fn= fnFs[[1]]),
+      FWD.ReverseReads= sapply(FWD.orients, primerHits, fn= fnRs[[1]]),
+      REV.ForwardReads= sapply(FWD.orients, primerHits, fn= fnFs[[1]]),
+      REV.ReverseReads= sapply(FWD.orients, primerHits, fn= fnRs[[1]]))
+```
+
+#Inspect Quality Read Profiles
+##FORWARD READS:
+```{r}
+plotQualityProfile(fnFs[1:24])
+```
+##REVERSE READS:
+```{r}
+plotQualityProfile(fnRs[1:24])
+```
+
+##TRIMMING
+```{r}
+sample.names<- sapply(strsplit(basename(fnFs), "_L"), '[',1)
+
+filt_path<- file.path(path, "filtered")
+filtFs<- file.path(filt_path, paste0(sample.names, "_F_filt.fastq"))
+filtRs<- file.path(filt_path, paste0(sample.names, "_R_filt.fastq"))
+```
+```{r}
+out<- filterAndTrim(fnFs, filtFs, fnRs, filtRs, truncLen = c(200, 150), maxN = 0, maxEE = c(2,2), truncQ = 2, rm.phix = TRUE, compress = TRUE)
+readsinout<- out
+```
+
+#Error Rates
+```{r}
+errF<-learnErrors(filtFs, multithread = TRUE)
+errR<-learnErrors(filtRs, multithread = TRUE)
+```
+
+```{r}
+plotErrors(errF, nominalQ = TRUE)
+```
+```{r}
+plotErrors(errR, nominalQ = TRUE)
+```
+
+##Dereplication
+```{r}
+derepFs<- derepFastq(filtFs, verbose = TRUE)
+derepRS<- derepFastq(filtRs, verbose = TRUE)
+
+names(derepFs)<- sample.names
+names(derepRS)<- sample.names
+```
+
+##Infer Sequence Variants
+```{r}
+dadaFs<- dada(derepFs, err = errF, multithread = TRUE)
+dadaRs<- dada(derepRS, err = errR, multithread = TRUE)
+```
+##Merge Overlapping
+```{r}
+mergers<- mergePairs(dadaFs, derepFs, dadaRs, derepRS, verbose = TRUE, trimOverhang = T)
+```
+
+##Save Mergers
+```{r}
+saveRDS(mergers, "~/GitHub_Files/144l_students/Output_Data/dada_merged_.rds")
+```
+
+##Sequence Table
+```{r}
+seqtab<- makeSequenceTable(mergers)
+dim(seqtab)
+```
+##Check Distribution
+```{r}
+table(nchar(getSequences(seqtab)))
+```
+
+##Remove Chimeras
+```{r}
+seqtab.nochim<- removeBimeraDenovo(seqtab, verbose = TRUE)
+dim(seqtab.nochim)
+```
+
+##Non-Chimera Proportion:
+```{r}
+sum(seqtab.nochim)/sum(seqtab)
+```
+
+
+
+#ASSIGN TAXA
+```{r}
+taxa<- assignTaxonomy(seqtab.nochim, "~/GitHub_Files/144l_students/Input_Data/week5/Reference_Database-20201114T014303Z-001/Reference_Database/silva_nr_v138_train_set.fa", multithread = TRUE)
+```
+
+```{r}
+saveRDS(t(seqtab.nochim),
+ "~/GitHub_Files/144l_students/Output_Data/seqtab-nochimtaxa.rds")
+saveRDS(taxa,"~/GitHub_Files/144l_students/Output_Data/taxa.rds")
+```
+
