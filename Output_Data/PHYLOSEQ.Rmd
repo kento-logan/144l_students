@@ -1,0 +1,217 @@
+---
+title: "PhyloseqDATA"
+author: "KentoLogan"
+date: "11/20/2020"
+output: github_document
+---
+```{r}
+#BiocManager::install("phyloseq")
+```
+```{r}
+library(tidyverse)
+library(phyloseq)
+library(RColorBrewer)
+library(readxl)
+```
+
+#IMPORT DATA
+```{r}
+count.tab<- read_rds("~/GitHub_Files/144l_students/Output_Data/seqtab-nochimtaxa.rds")
+#TableOContents for each seq in each samp
+tax.tab<- read_rds("~/GitHub_Files/144l_students/Output_Data/taxa.rds")
+#Table matches ASV to seq
+meta_data<- read_excel("~/GitHub_Files/144l_students/Input_Data/week3/144L_2018_BactAbund.xlsx", sheet= 1) %>% 
+  select(Treatment, Bottle, Timepoint, DNA_SampleID) 
+
+sample.tab<- read_rds("~/GitHub_Files/144l_students/Output_Data/DOC_BGE.rds") %>% 
+ left_join(meta_data, .) %>% 
+  mutate(hours= as.numeric(interv)/3600, 
+         days= hours/24) %>% 
+  drop_na(DNA_SampleID) %>% 
+  column_to_rownames("DNA_SampleID") 
+```
+
+#PHYLOSEQ OBJECT: Merge the Three Objects
+```{r}
+OTU= otu_table(count.tab, taxa_are_rows = T)
+TAX= tax_table(tax.tab)
+SAM= sample_data(sample.tab)
+ps= phyloseq(OTU, TAX, SAM)
+```
+
+#FILTER SEQ: Filter Out Chloroplasts and Mitochondria
+```{r}
+sub_ps<- ps %>% 
+  subset_taxa(Family!= "Mitochondria" & Order!="Chloroplast")
+test<- as.data.frame(sub_ps@tax_table)
+```
+
+#SAMPLE SUMMARY
+```{r}
+sample_sum_df<- data.frame(sum= sample_sums(sub_ps))
+ggplot(sample_sum_df, aes(x= sum))+
+  geom_histogram(color= "black", fill= "#377EB8", binwidth = 1000)+
+  ggtitle("Distribution of Sample Sequencing Depth")+
+  xlab("Read Counts")+
+  theme(axis.title.y = element_blank())+
+  theme_bw()
+
+```
+
+#BETA SAMPLING
+##Subsample
+```{r}
+ps_min<- rarefy_even_depth(sub_ps, sample.size = min(sample_sums(sub_ps)))
+
+mean(sample_sums(sub_ps))
+mean(sample_sums(ps_min))
+```
+##NMDS
+```{r}
+set.seed(1)
+nmds<- ordinate(sub_ps, method = "NMDS", distance = "bray")
+```
+```{r}
+set.seed(1)
+nmds_min<- ordinate(ps_min, method = "NMDS", distance = "bray")
+```
+
+```{r}
+levels<-c("Control", "Ash Leachate", "Mud Leachate", "Glucose_Nitrate_Phosphate")
+
+nmds.plot<- plot_ordination(sub_ps, nmds, title = "NMDs")+
+  geom_point(aes(fill= days, shape= factor(Treatment, levels = levels)), alpha= 0.6, stroke= 2, size= 4)+
+  scale_shape_manual(values = c(21,22,23))+
+  scale_fill_gradient(low = "#0db5e6", high= "#d31f2a")+
+  theme_bw()
+
+nmds.plot$layers<- nmds.plot$layers[1]
+nmds.plot+
+  facet_grid()+
+  guides(fill= guide_colorbar(title = "Days"), shape= guide_legend(title = "Treatment"))
+```
+```{r}
+levels<-c("Control", "Ash Leachate", "Mud Leachate", "Glucose_Nitrate_Phosphate")
+
+nmds_min.plot<- plot_ordination(sub_ps, nmds_min, title = "NMDs")+
+  geom_point(aes(fill= days, shape= factor(Treatment, levels = levels)), alpha= 0.6, stroke= 2, size= 4)+
+  scale_shape_manual(values = c(21,22,23))+
+  scale_fill_gradient(low = "#0db5e6", high= "#d31f2a")+
+  theme_bw()
+  
+
+nmds_min.plot$layers<- nmds_min.plot$layers[1]
+nmds_min.plot+
+  facet_grid()+
+  guides(fill= guide_colorbar(title = "Days"), shape= guide_legend(title = "Treatment"))
+```
+
+ALPHA DIVERSITY
+```{r}
+richness<- estimate_richness(ps_min, measures = c("Chao1", "Shannon")) %>% 
+  rownames_to_column(., var = "DNA_ID") %>% 
+  mutate_at(vars(DNA_ID), str_replace_all, pattern= "X144", "144")
+```
+
+```{r}
+alphadiv<- left_join(richness, sample.tab %>% 
+                       rownames_to_column(., var = "DNA_ID"))
+```
+```{r}
+#install.packages("ggpubr")
+library(ggpubr)
+```
+```{r}
+pivot.data<- alphadiv %>% 
+  select(Treatment, Bottle, Timepoint, days, Chao1, Shannon) %>% 
+  pivot_longer(., cols= c(Chao1, Shannon), names_to="measure", values_to= "est") %>% 
+  left_join(., alphadiv %>% 
+              select(Treatment, Bottle, Timepoint, days, se.chao1)) %>% 
+  mutate(se.chao1= ifelse(measure== "Chao1", se.chao1, NA))
+
+alpha.plot<- ggboxplot(pivot.data, x= "Timepoint", y= "est", 
+                       xlab = expression(italic(paste(""))),
+                       ylab =expression(italic(paste("Alpha Diversity Measure"))),
+                       add = "dotplot",
+                       width= 0.2,
+                       ggtheme= theme_bw())+
+  stat_compare_means(label.x= "6")+
+facet_grid(measure~ factor(Treatment, levels = levels), scales = "free")
+
+alpha.plot
+```
+
+#Who Contributes?
+```{r}
+ps_std<- transform_sample_counts(ps_min, function(x) x/ sum(x))
+
+ps_std.tab<- as(otu_table(ps_std), "matrix")
+
+ps_std.df<- as.data.frame(ps_std.tab)
+```
+#Table
+```{r}
+tax.df<- as.data.frame(tax.tab)
+custom.tab<- tax.df %>% 
+  rownames_to_column(., var = "asv") %>% 
+  left_join(., ps_std.df %>%  rownames_to_column(., var= "asv")) %>% 
+  mutate(pco= paste(Phylum, "_", Class, "_", Order)) %>% 
+  select(pco, everything()) %>% 
+  group_by(pco) %>% 
+  summarise_at(vars(contains(c("144"))), sum, na.rm= T) %>% 
+  ungroup()
+
+colnames<-custom.tab[,1]
+t_custom.tab<- as.data.frame(t(custom.tab[,-1]))
+colnames(t_custom.tab)<- colnames$pco
+```
+```{r}
+sweet.tab<- t_custom.tab %>% 
+  rownames_to_column(.,var = "sample") %>% 
+  left_join(., sample.tab %>% rownames_to_column(., var= "sample") %>% 
+              select(sample, Treatment, Bottle, Experiment, Timepoint, days, cells)) %>% 
+  select(sample: cells, everything())
+```
+
+```{r}
+relabund<- sweet.tab %>% 
+  select(-c(sample:cells)) %>% 
+  .[ , colSums(.)>0] %>% 
+  .[, order(colSums(-.))] %>% 
+  bind_cols(sweet.tab %>% select(sample:cells), .) %>% 
+  select(sample:cells, everything())
+```
+
+##Heat
+```{r fig.height=16, fig.width=10}
+relaheat.data<-relabund %>% 
+  select(-c(sample, Experiment, Bottle, days, cells)) %>% 
+  pivot_longer(.,-c(Treatment:Timepoint), names_to= "taxa", 
+               values_to= "relabund") %>% 
+  separate(taxa, into= c("p", "c", "o"), sep= "_")
+
+
+#install.packages("viridis")
+library(viridis)
+
+relaheat<- relaheat.data %>% 
+  ggplot(aes(x= Timepoint, y= o))+
+  geom_tile(aes(fill= relabund), color="white")+
+  scale_fill_viridis(option = "D")+
+  labs(x="", y= "Order", fill= "Relative Abundance")+
+  facet_grid(~factor(Treatment, levels = levels))+
+  theme_bw()+
+  theme(axis.text.y = element_text(size= 12), 
+        legend.position = "top")+
+  guides(fill=guide_colourbar(barheight = 2, barwidth = 20, frame.colour = "black", ticks.linewidth = 1), color= F)
+
+relaheat
+```
+#Save
+```{r}
+saveRDS(sweet.tab, "~/GitHub_Files/144l_students/Output_Data/Custom_ASV_Table.rds")
+saveRDS(sub_ps, "~/GitHub_Files/144l_students/Output_Data/PHYLOSEQ.rds")
+saveRDS(ps_min, "~/GitHub_Files/144l_students/Output_Data/Subset_PHYLOSEQ.rds")
+saveRDS(alphadiv, "~/GitHub_Files/144l_students/Output_Data/alphadiv.rds")
+```
+

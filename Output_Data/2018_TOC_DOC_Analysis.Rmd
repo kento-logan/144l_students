@@ -30,9 +30,7 @@ toc<- joined %>%
          hours= interv/3600,
          days= hours/24) %>% 
   ungroup() %>% 
-  rename(sd_TOC= TOC_sd,
-         sd_PTOC= PTOC_sd) %>% 
-  select(Bottle:Datetime, hours, days, everything(), -c(contains("Sample"), interv))
+  select(Bottle:Datetime, hours, days, everything(), -interv)
 ```
 #PLOT THE CURVES
 ##Pivot!!!!
@@ -42,8 +40,8 @@ pivot_toc<- toc %>%
   pivot_longer(TOC:PTOC, names_to= "sample", values_to= "value")
 
 pivot_toc_sd<- toc %>% 
-  select(Location,Bottle,Treatment,days,sd_TOC,sd_PTOC) %>% 
-  pivot_longer(sd_TOC:sd_PTOC, names_to= "sample", names_prefix= "sd_", values_to= "sd")
+  select(Location,Bottle,Treatment,days,TOC_sd,PTOC_sd) %>% 
+  pivot_longer(TOC_sd:PTOC_sd, names_to= "sample", names_prefix= "sd_", values_to= "sd")
 
 pivot_join<- left_join(pivot_toc, pivot_toc_sd) %>% 
   mutate(sample= ifelse(sample=="TOC", "Bottle", "Vial"))
@@ -97,8 +95,8 @@ nine_slope<- reg$confidence.intervals[3,5]
 ```{r}
 reg.data %>%
   ggplot(aes(x= TOC, y= PTOC))+
-  geom_errorbar(aes(ymin= PTOC-sd_PTOC, ymax= PTOC+sd_PTOC), width= 0.05)+
-  geom_errorbarh(aes(xmin= TOC-sd_TOC, xmax= TOC+sd_TOC), width= 0.05)+
+  geom_errorbar(aes(ymin= PTOC-PTOC_sd, ymax= PTOC+PTOC_sd), width= 0.05)+
+  geom_errorbarh(aes(xmin= TOC-TOC_sd, xmax= TOC+TOC_sd), width= 0.05)+
   geom_point(shape= 21, size= 4, alpha= 0.7)+
   geom_abline(intercept= intercept, slope= slope, color= "black", linetype= 2, size= 1)+
   geom_abline(intercept = two.int, slope = two_slope, color= "black", linetype=3, size= 1)+
@@ -111,7 +109,7 @@ reg.data %>%
 bc<- read_rds("~/GitHub_Files/144l_students/Output_Data/2018_Processed_Bact_Abund_OFFICIAL.rds")
 
 merge<- left_join(toc, bc) %>% 
-  select(Experiment:days, TOC:sd_PTOC, cells:diff_ln_cells, bc, ave_bc, sd_bc, everything(), -c(contains("Sample"))) %>% 
+  select(Experiment:days, TOC:PTOC_sd, cells:diff_ln_cells, bc, ave_bc, sd_bc, everything()) %>% 
   group_by(Treatment, Bottle) %>% 
   fill(exp_start:sd_lag) %>% 
   ungroup()
@@ -187,7 +185,7 @@ subsetIII<- doc %>%
 averages<- doc %>% 
   group_by(Treatment, Timepoint) %>% 
   mutate(ave_toc= mean(PTOC),
-         sd_toc= sd(PTOC)) %>% 
+         TOC_sd= sd(PTOC)) %>% 
   ungroup() %>% 
   group_by(Treatment) %>% 
   mutate(ave_bioav_doc= mean(bioav_doc),
@@ -207,7 +205,7 @@ averages %>%
   mutate(Treatment= factor(Treatment, levels = levels)) %>% 
   drop_na(ave_toc) %>% 
   ggplot(aes(x= days, y= ave_toc, group= interaction(Treatment)))+
-  geom_errorbar(aes(ymin= ave_toc - sd_toc, ymax= ave_toc+ sd_toc, color= Treatment), width= 0.4)+ 
+  geom_errorbar(aes(ymin= ave_toc - TOC_sd, ymax= ave_toc+ TOC_sd, color= Treatment), width= 0.4)+ 
   geom_point(aes(fill=Treatment), size= 3, shape=21, alpha= 0.7)+
   geom_line(aes(color=Treatment), size= 1, alpha= 0.7)+
   scale_color_manual(values = custom.colors)+
@@ -274,5 +272,8 @@ library(patchwork)
 ```
 ```{r fig.height=8}
 deldoc/total_deldoc/total_deldoc/bge+ plot_annotation(title = "2018 Processed DOC&BGE", tag_levels = "a")
+```
+```{r}
+saveRDS(averages,"~/GitHub_Files/144l_students/Output_Data/DOC_BGE.rds")
 ```
 
